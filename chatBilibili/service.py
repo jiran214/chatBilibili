@@ -1,0 +1,188 @@
+"""
+ @Author: jiran
+ @Email: jiran214@qq.com
+ @FileName: service.py
+ @DateTime: 2023/4/7 16:30
+ @SoftWare: PyCharm
+"""
+import asyncio
+from contextlib import asynccontextmanager
+from typing import List, Union
+
+import aiohttp
+import numpy as np
+
+from log import service_logger
+from parse.audio2text import get_audio_text
+from parse.content import async_parse_content_to_file
+from parse.json import get_note_detail_subtitle, get_note_cc_content
+from prompt.prompt_helpers import GPT3dot5PromptHelper, temple
+from prompt.schema import SummaryConfig
+from requestor.bilibili import request_note_detail, request_note_audio, request_note_cc
+from requestor.opanAi import chat_with_3dot5, async_get_embedding, async_get_embedding_with_documents, get_embedding
+from requestor.schemas import BiliNote, BiliAudioDownloadHrefParams, BiliNoteView
+from schema import Document, Vector
+from utils.embedding import num_tokens_and_cost_from_string, distances_from_embeddings
+from utils.session import _make_session
+
+
+class EmbeddingService:
+    model = 'text-embedding-ada-002'
+
+    def __init__(self):
+        ...
+
+    def get_embedding(self, document_without_embedding: Document) -> Document:
+        """获取文本向量"""
+        embedding, tk = get_embedding([document_without_embedding.content])
+        document_without_embedding.embedding = embedding
+        return document_without_embedding
+
+    async def get_embedding_list(self, documents_without_embedding: List[Document]):
+        """加载长文本向量"""
+
+        tasks = []
+        waiting_documents = []
+        embedding_total_tk = 0
+        total_cost = 0
+        current_tk = 0
+        limit_tk = 8192 - 1024
+
+        # 限制每次请求的tk长度
+        for document in documents_without_embedding:
+            tk, cost = num_tokens_and_cost_from_string(document.content, model=self.model)
+            current_tk += tk
+
+            embedding_total_tk += tk
+            total_cost += cost
+            if current_tk >= limit_tk:
+                tasks.append(async_get_embedding_with_documents(waiting_documents))
+                waiting_documents = []
+                current_tk = 0
+            else:
+                waiting_documents.append(document)
+
+        if waiting_documents:
+            tasks.append(async_get_embedding_with_documents(waiting_documents))
+
+        # 并发请求
+        res = await asyncio.gather(
+            *tasks
+        )
+        new_documents = []
+        for tmp_documents in res:
+            new_documents.extend(tmp_documents)
+        service_logger.info(f"共花费{embedding_total_tk}token,{total_cost}美元")
+
+        return new_documents, embedding_total_tk
+
+    def calc_avg_embedding(self, documents: List[Document]) -> Vector:
+        """计算向量列表中的平均向量"""
+        # 创建嵌入矩阵
+        embedding_matrix = np.array([d.embedding for d in documents])
+        # 计算所有向量的和，并除以向量数量，得到平均向量
+        mean_embedding = np.mean(embedding_matrix, axis=0)
+        return mean_embedding.data
+
+    def search_top_n_with_vector_from_documents(
+            self, search_vector: Vector, documents: List[Document], top, distance_metric='cosine'
+    ):
+        """
+        默认余弦相似度方式，从向量列表中搜索相似度top n的列表
+        :param search_vector:
+        :param documents:
+        :param top:
+        :param distance_metric: cosine L1 L2 Linf
+        :return:
+        """
+        embeddings = [d.embedding for d in documents]
+        distances = distances_from_embeddings(embeddings=embeddings, query_embedding=search_vector, distance_metric=distance_metric)
+        top_n_indices = np.argsort(distances)[:top]
+        return [documents[index] for index in top_n_indices]
+
+    def search_top_n_with_vector_from_documents_euclidean(
+            self, embedding: Vector, documents: List[Document], top
+    ) -> List[Document]:
+        """欧几里得方式，从向量列表中搜索相似度top n的列表"""
+        # 生成向量矩阵
+        embedding_matrix = np.array([d.embedding for d in documents])
+        # 计算每个向量与平均向量的距离，并排序，得到最接近的前n个向量
+        distances = np.linalg.norm(embedding_matrix - embedding, axis=1)
+        top_n_indices = np.argsort(distances)[:top]
+        return [documents[index] for index in top_n_indices]
+
+
+
+class GPTService:
+    def __init__(self):
+        self.prompt_helper = GPT3dot5PromptHelper()
+
+    def get_summary_2(self, documents: List[Document]):
+        self.prompt_helper.initialize_message_system_content(temple.get_bili_summary_system_2(documents))
+        content, tk = chat_with_3dot5(self.prompt_helper)
+        return content
+
+    def get_summary_1(self, note_schema: BiliNoteView, documents: List[Document], config: SummaryConfig):
+        self.prompt_helper.initialize_message_system_content(temple.get_bili_summary_system())
+        self.prompt_helper.add_message_user_content(
+            temple.get_bili_summary_user_content(
+                title=note_schema.title,
+                documents=documents,
+                config=config,
+            )
+        )
+        content, tk = chat_with_3dot5(self.prompt_helper)
+        return content, tk
+
+    def chat(self, question, documents: List[Document]):
+        self.prompt_helper.initialize_message_system_content(temple.get_bili_chat_system_content())
+        self.prompt_helper.add_message_user_content(temple.get_bili_chat_user_content(question, documents))
+        content, tk = chat_with_3dot5(self.prompt_helper)
+        print(self.prompt_helper.messages)
+        return content, tk
+
+
+class NoteCaptionCrawlService:
+    def __init__(self, aid, bv=None):
+        self.aid = aid
+
+    async def get_note_caption(self) -> (Union[List[Document], None], BiliNote):
+        """获取cc字幕，没有返回None"""
+        # 借鉴openAi库的写法
+        ctx = _make_session()
+        session = await ctx.__aenter__()
+        json_data = await request_note_detail(session, self.aid)
+        subtitle_url, note_schema = get_note_detail_subtitle(json_data)
+        if subtitle_url:
+            json_data = await request_note_cc(session, subtitle_url)
+            content_list = get_note_cc_content(json_data)
+        else:
+            audio_filepath = await request_note_audio(
+                session,
+                BiliAudioDownloadHrefParams(
+                    avid=note_schema.View.aid, cid=note_schema.View.cid
+                ))
+            content_list = get_audio_text(audio_filepath)
+        documents = [Document(hash_id=hash(content), content=content) for content in content_list]
+        return documents, note_schema
+
+
+
+# class VectorStorageService:
+#     def __init__(self, storage):
+#         self.storage = None
+#
+#     def save_documents_to_storage(self, save_key, documents: List[Document]):
+#         """持久化长文本和向量"""
+#         ...
+#
+#     def load_documents_from_storage(self, save_key) -> List[Document]:
+#         """加载键对应的所有文本和向量到内存"""
+#         ...
+#
+#     def exists_key_in_storage(self, save_key) -> bool:
+#         return False
+#
+#     def search_top_n_from_storage(self, document: Document, save_key, top) -> List[Document]:
+#         """利用数据库封装的向量搜索"""
+#         ...

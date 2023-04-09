@@ -127,7 +127,7 @@ async def caption(
     question_document, embedding_tk = embedding_service.get_embedding(Document(hash_id=hash(question), content=question))
     logger.debug(f'aid:{aid}-请求向量模型完成-消耗tk:{embedding_tk}-耗时{t()}')
 
-    top_n_documents = embedding_service.search_top_n_with_vector_from_documents(question_document.embedding, documents, top=10)
+    top_n_documents = embedding_service.search_top_n_with_vector_from_documents(question_document.embedding, documents, top=20)
     logger.debug(f'aid:{aid}-搜索chat语料完成-耗时{t()}')
 
     gpt_service = GPTService()

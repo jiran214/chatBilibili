@@ -48,11 +48,11 @@ some_config = ...
 
 ## 功能介绍
 
-![image-20230409211417238](https://raw.githubusercontent.com/chatBilibili/main/public/image-20230409211417238.png)
+![image-20230409211417238](https://raw.githubusercontent.com/jiran214/chatBilibili/master/public/image-20230409211417238.png)
 
 使用fastapi的docs体验功能
 
-![image-20230409211640365](https://raw.githubusercontent.com/chatBilibili/main/public/image-20230409211640365.png)
+![image-20230409211640365](https://raw.githubusercontent.com/jiran214/chatBilibili/master/public/image-20230409211640365.png)
 
 note_query：BV号或者视频aid
 
@@ -64,7 +64,7 @@ question：聊天的问题
 
 示例：[【4K顶级画质60FPS】蔡徐坤《只因你太美》原版完整版现场！一晃眼6年过去了_哔哩哔哩_bilibili](https://www.bilibili.com/video/BV1ct4y1n7t9/?spm_id_from=333.337.search-card.all.click&vd_source=df965f3f6f275f55ae2075576c0f4750)
 
-![image-20230409212218735](https://raw.githubusercontent.com/chatBilibili/main/public/image-20230409212218735.png)
+![image-20230409212218735](https://raw.githubusercontent.com/jiran214/chatBilibili/master/public/image-20230409212218735.png)
 
 ```markdown
 ## 摘要
@@ -84,7 +84,7 @@ question：聊天的问题
 
 问问坤坤喜欢什么？
 
-![image-20230409213138401](https://raw.githubusercontent.com/chatBilibili/main/public/image-20230409213138401.png)
+![image-20230409213138401](https://raw.githubusercontent.com/jiran214/chatBilibili/master/public/image-20230409213138401.png)
 
 ```markdown
 根据您提供的段落，我可以回答您的问题。据我了解，您是蔡徐坤粉丝或者喜欢他的音乐和表演，因为这些段落包含了一些与他相关的话题。蔡徐坤擅长的方面包括唱跳 rap、篮球、以及作曲编舞的原创作品。在他的歌曲中，\"只因你太美\" 和 \"who you\" 这两首歌深受粉丝们的喜爱，并且他还制作了很多自己的作词。如果您是蔡徐坤的粉丝，那么您应该期待他在未来的节目中的表现，并多多为他投票，以支持他的音乐事业。综上所述，蔡徐坤擅长的方面主要集中在音乐表演和篮球方面。

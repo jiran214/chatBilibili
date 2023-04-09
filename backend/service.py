@@ -26,17 +26,20 @@ from utils.embedding import num_tokens_and_cost_from_string, distances_from_embe
 from utils.session import _make_session
 
 
+logger = service_logger
+
+
 class EmbeddingService:
     model = 'text-embedding-ada-002'
 
     def __init__(self):
         ...
 
-    def get_embedding(self, document_without_embedding: Document) -> Document:
+    def get_embedding(self, document_without_embedding: Document) -> (Document, int):
         """获取文本向量"""
         embedding, tk = get_embedding([document_without_embedding.content])
         document_without_embedding.embedding = embedding
-        return document_without_embedding
+        return document_without_embedding, tk
 
     async def get_embedding_list(self, documents_without_embedding: List[Document]):
         """加载长文本向量"""
@@ -72,17 +75,24 @@ class EmbeddingService:
         new_documents = []
         for tmp_documents in res:
             new_documents.extend(tmp_documents)
-        service_logger.info(f"共花费{embedding_total_tk}token,{total_cost}美元")
+        # service_logger.info(f"共花费token{embedding_total_tk},{total_cost}美元")
 
         return new_documents, embedding_total_tk
 
-    def calc_avg_embedding(self, documents: List[Document]) -> Vector:
-        """计算向量列表中的平均向量"""
-        # 创建嵌入矩阵
-        embedding_matrix = np.array([d.embedding for d in documents])
-        # 计算所有向量的和，并除以向量数量，得到平均向量
-        mean_embedding = np.mean(embedding_matrix, axis=0)
-        return mean_embedding.data
+    def get_reference_vector(self, documents: List[Document], option='title') -> Vector:
+        if option == 'title':
+            for d in documents:
+                if d.filed == option:
+                    return d.embedding
+        elif option == 'avg':
+            """计算向量列表中的平均向量"""
+            # 创建嵌入矩阵
+            embedding_matrix = np.array([d.embedding for d in documents])
+            # 计算所有向量的和，并除以向量数量，得到平均向量
+            mean_embedding = np.mean(embedding_matrix, axis=0)
+            return mean_embedding.data
+        else:
+            raise f'option:{option}不存在'
 
     def search_top_n_with_vector_from_documents(
             self, search_vector: Vector, documents: List[Document], top, distance_metric='cosine'
@@ -112,15 +122,14 @@ class EmbeddingService:
         return [documents[index] for index in top_n_indices]
 
 
-
 class GPTService:
     def __init__(self):
         self.prompt_helper = GPT3dot5PromptHelper()
 
     def get_summary_2(self, documents: List[Document]):
         self.prompt_helper.initialize_message_system_content(temple.get_bili_summary_system_2(documents))
-        content, tk = chat_with_3dot5(self.prompt_helper)
-        return content
+        chat_with_3dot5(self.prompt_helper)
+        return self.prompt_helper
 
     def get_summary_1(self, note_schema: BiliNoteView, documents: List[Document], config: SummaryConfig):
         self.prompt_helper.initialize_message_system_content(temple.get_bili_summary_system())
@@ -131,42 +140,51 @@ class GPTService:
                 config=config,
             )
         )
-        content, tk = chat_with_3dot5(self.prompt_helper)
-        return content, tk
+        chat_with_3dot5(self.prompt_helper)
+        return self.prompt_helper
 
     def chat(self, question, documents: List[Document]):
         self.prompt_helper.initialize_message_system_content(temple.get_bili_chat_system_content())
         self.prompt_helper.add_message_user_content(temple.get_bili_chat_user_content(question, documents))
-        content, tk = chat_with_3dot5(self.prompt_helper)
-        print(self.prompt_helper.messages)
-        return content, tk
+        chat_with_3dot5(self.prompt_helper)
+        return self.prompt_helper
 
 
 class NoteCaptionCrawlService:
     def __init__(self, aid, bv=None):
         self.aid = aid
 
-    async def get_note_caption(self) -> (Union[List[Document], None], BiliNote):
+    async def get_note_caption(self, t) -> (Union[List[Document], None], BiliNote):
         """获取cc字幕，没有返回None"""
         # 借鉴openAi库的写法
         ctx = _make_session()
         session = await ctx.__aenter__()
         json_data = await request_note_detail(session, self.aid)
         subtitle_url, note_schema = get_note_detail_subtitle(json_data)
+        logger.debug(f'aid:{self.aid}-获取subtitle_url完成-耗时{t()}')
+
         if subtitle_url:
             json_data = await request_note_cc(session, subtitle_url)
             content_list = get_note_cc_content(json_data)
+            logger.debug(f'aid:{self.aid}-获取cc字幕完成-耗时{t()}')
         else:
             audio_filepath = await request_note_audio(
                 session,
                 BiliAudioDownloadHrefParams(
                     avid=note_schema.View.aid, cid=note_schema.View.cid
                 ))
+            logger.debug(f'aid:{self.aid}-下载mp3完成-耗时{t()}')
             content_list = get_audio_text(audio_filepath)
+            logger.debug(f'aid:{self.aid}-获取bCut字幕完成-耗时{t()}')
+
         documents = [Document(hash_id=hash(content), content=content) for content in content_list]
+
+        # documents加入除字幕以外的东西 todo View能加上都加上
+        documents.extend([
+            Document(hash_id=hash(note_schema.View.title), content=note_schema.View.title, filed='title')
+        ])
+
         return documents, note_schema
-
-
 
 # class VectorStorageService:
 #     def __init__(self, storage):

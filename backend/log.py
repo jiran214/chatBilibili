@@ -39,12 +39,14 @@ class Logging:
 
         # 创建一个日志对象
         self._logger = logging.getLogger(self.log_file_name)
-        # 设置控制台日志的输出级别: 级别排序:CRITICAL > ERROR > WARNING > INFO > DEBUG
-        self._logger.setLevel(logging.INFO)  # 大于info级别的日志信息都会被输出
-        # self._logger.setLevel(logging.DEBUG)  # 大于info级别的日志信息都会被输出
         self.set_console_logger()
-        if config.debug is False:
+
+        # 设置控制台日志的输出级别: 级别排序:CRITICAL > ERROR > WARNING > INFO > DEBUG
+        if config.debug is True:
+            self._logger.setLevel(logging.DEBUG)  # 大于info级别的日志信息都会被输出
+        else:
             self.set_file_logger()
+            self._logger.setLevel(logging.INFO)  # 大于info级别的日志信息都会被输出
 
     def get_log_filename(self):
         if not os.path.isdir(self.log_file_path):

@@ -16,4 +16,5 @@ class Document(BaseModel):
     hash_id: int
     content: str
     embedding: Vector = None
+    filed: str = 'caption'
     # source: str

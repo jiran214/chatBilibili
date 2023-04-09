@@ -22,7 +22,7 @@ import urllib3
 
 import config
 from log import crawler_logger
-from prompt.prompt_helpers import PromptHelper, GPT3dot5PromptHelper
+from prompt.prompt_helpers import GPT3dot5PromptHelper
 from requestor.schemas import GPT35Params
 from schema import Document
 
@@ -32,23 +32,31 @@ if config.proxy:
 openai.api_key = config.api_key
 
 logger = crawler_logger
+headers = {
+    'Content-Type': 'application/json',
+    'Authorization': f"Bearer {config.api_key}"
+}
 
-s = requests.Session()
+proxies = {
+    'http': f'http://{config.proxy}/',
+    'https': f'http://{config.proxy}/'
+}
 
 
 def make_session() -> requests.Session:
+    s = requests.Session()
     s.verify = False
-    s.proxies = {
-        'http': f'http://{config.proxy}/',
-        'https': f'http://{config.proxy}/'
-    }
+    s.proxies = proxies
     urllib3.disable_warnings()
     s.trust_env = False
-    # s.mount(
-    #     "https://",
-    #     requests.adapters.HTTPAdapter(max_retries=2),
-    # )
+    s.mount(
+        "https://",
+        requests.adapters.HTTPAdapter(max_retries=2),
+    )
     return s
+
+
+session = make_session()
 
 
 @asynccontextmanager
@@ -58,7 +66,8 @@ async def aiohttp_session() -> AsyncIterator[aiohttp.ClientSession]:
 
 # 猴子补丁
 if config.proxy:
-    api_requestor._make_session = make_session
+    # api_requestor._make_session = make_session
+    setattr(api_requestor._thread_context, 'session', session)
     api_requestor.aiohttp_session = aiohttp_session
 
 
@@ -102,6 +111,28 @@ def get_summary(text: str, model="gpt-3.5-turbo"):
     return response['choices'][0]['message']['content'], response['usage']['total_tokens']
 
 
+def gpt_post(prompt_helper: GPT3dot5PromptHelper):
+    gpt_url = "https://api.openai.com/v1/chat/completions"
+    post = GPT35Params(
+        model=prompt_helper.model,
+        # messages=prompt_helper.messages,
+        messages=prompt_helper.messages,
+        temperature=1,
+        # max_tokens
+    )
+    resp = session.post(
+        headers=headers,
+        url=gpt_url,
+        data=post.json(exclude_defaults=False, exclude_none=True),  # 排除所有值为None的元素
+        proxies=proxies,
+    )
+    resp = resp.json()
+    if 'error' in resp:
+        logger.error(f"请求openai失败：{str(resp)}")
+    # prompt_helper.tk = response['usage']['total_tokens']
+    # prompt_helper.add_message(response['choices'][0]['message'])
+
+
 def chat_with_3dot5(prompt_helper: GPT3dot5PromptHelper):
     response = openai.ChatCompletion.create(**GPT35Params(
         model=prompt_helper.model,
@@ -110,7 +141,9 @@ def chat_with_3dot5(prompt_helper: GPT3dot5PromptHelper):
         temperature=1,
         # max_tokens
     ).dict(exclude_defaults=False, exclude_none=True))
-    return response['choices'][0]['message']['content'], response['usage']['total_tokens']
+    prompt_helper.tk = response['usage']['total_tokens']
+    prompt_helper.add_message(response['choices'][0]['message'])
+    # return prompt_helper
 
 
 async def aio_test():
@@ -119,8 +152,9 @@ async def aio_test():
     # )
     [simple_get_embedding('你好世界') for _ in range(50)]
 
+
 if __name__ == '__main__':
     t1 = time.time()
     loop = asyncio.get_event_loop()
     loop.run_until_complete(aio_test())
-    print(time.time()-t1)
+    print(time.time() - t1)

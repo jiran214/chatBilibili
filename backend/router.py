@@ -5,24 +5,25 @@
  @DateTime: 2023/4/7 16:30
  @SoftWare: PyCharm
 """
-
-import openai.embeddings_utils
 import time
 
 from fastapi import APIRouter, HTTPException
 # from starlette.responses import StreamingResponse
 # from fastapi.responses import StreamingResponse
-
+import log
 from database.mongo_orm import NoteColl
 from database.schema import BiliNoteForMongo
 from prompt.schema import SummaryConfig
 from schema import Document
 from service import NoteCaptionCrawlService, EmbeddingService, GPTService
+from utils.timeutil import TimeRecord
 from utils.video_id_transform import note_query_2_aid
 
 embedding_router = APIRouter(
     prefix=''
 )
+
+logger = log.service_logger
 
 
 @embedding_router.get("/summary", summary='获取视频向量，生成概要', description='', tags=['summary'])
@@ -37,16 +38,23 @@ async def caption(
     if not aid:
         raise HTTPException(status_code=500, detail="未找到相关资源")
 
+    tr = TimeRecord(aid)
+    t = tr.mark
+
     # 是否已经有向量数据
     coll = NoteColl()
     mongo_note_schema = coll.find_one(aid=int(aid))
+    logger.debug(f'aid:{aid}-向量查询完成-耗时{t()}')
+
     embedding_service = EmbeddingService()
     if not mongo_note_schema:
         # 采集视频资源
         crawl_service = NoteCaptionCrawlService(aid=aid)
-        documents, note_schema = await crawl_service.get_note_caption()
+        documents, note_schema = await crawl_service.get_note_caption(t)
+        logger.debug(f"aid:{aid}-获取字幕资源完成-cc字幕:{bool(note_schema.View.subtitle['list'])}-耗时{t()}")
         # 获取向量
         documents, embedding_total_tk = await embedding_service.get_embedding_list(documents)
+        logger.debug(f'aid:{aid}-请求向量模型完成-消耗tk{embedding_total_tk}-耗时{t()}')
         # 存储向量
         coll.save_one(
             BiliNoteForMongo(
@@ -55,18 +63,25 @@ async def caption(
                 create_time=time.time()
             )
         )
+        logger.debug(f'aid:{aid}-向量存储完成-耗时{t()}')
         note_view_schema = note_schema.View
     else:
         # 查询向量
         note_view_schema = mongo_note_schema
         documents = mongo_note_schema.documents
+        logger.debug(f'aid:{aid}-资源已有 向量加载完成-耗时{t()}')
 
-    # 获取最接近中心向量的top n documents
-    mean_embedding = embedding_service.calc_avg_embedding(documents)
+    # 获取参照向量
+    mean_embedding = embedding_service.get_reference_vector(documents)
+    logger.debug(f'aid:{aid}-获取参照向量完成-耗时{t()}')
+
+    # 计算top n接近的documents
     top_n_documents = embedding_service.search_top_n_with_vector_from_documents(mean_embedding, documents, top=20)
+    logger.debug(f'aid:{aid}-搜索概要语料完成-耗时{t()}')
+
     # 生成概要
     gpt_service = GPTService()
-    summary, summary_tk = gpt_service.get_summary_1(
+    prompt_helper = gpt_service.get_summary_1(
         note_view_schema,
         documents=top_n_documents,
         config=SummaryConfig(
@@ -75,13 +90,14 @@ async def caption(
             words_count=15,
             language='Chinese'
         ))
+    logger.debug(f'aid:{aid}-请求GPT生成概要完成-消耗tk:{prompt_helper.tk}-耗时{t()}\n{prompt_helper.assistant_content}')
     # summary = gpt_service.get_summary_2(documents=top_n_documents)
 
     return {
         '主要内容': [d.content for d in top_n_documents],
-        '摘要': summary,
+        '摘要': prompt_helper.assistant_content,
         '嵌入使用token': embedding_total_tk,
-        '概要使用token': summary_tk
+        '概要使用token': prompt_helper.total_tk
     }
 
 
@@ -95,24 +111,33 @@ async def caption(
     if not aid:
         raise HTTPException(status_code=500, detail="未找到相关资源")
 
+    tr = TimeRecord(aid)
+    t = tr.mark
+
     # mongo是否有向量数据
     coll = NoteColl()
     mongo_note_schema = coll.find_one(aid=int(aid))
     if not mongo_note_schema:
         raise HTTPException(status_code=500, detail="请先获取summary")
     documents = [d for d in mongo_note_schema.documents]
-    embedding_service = EmbeddingService()
+    logger.debug(f'aid:{aid}-向量查询完成-耗时{t()}')
 
+    embedding_service = EmbeddingService()
     # 搜索top 相关向量
-    question_document = embedding_service.get_embedding(Document(hash_id=hash(question), content=question))
+    question_document, embedding_tk = embedding_service.get_embedding(Document(hash_id=hash(question), content=question))
+    logger.debug(f'aid:{aid}-请求向量模型完成-消耗tk:{embedding_tk}-耗时{t()}')
+
     top_n_documents = embedding_service.search_top_n_with_vector_from_documents(question_document.embedding, documents, top=10)
+    logger.debug(f'aid:{aid}-搜索chat语料完成-耗时{t()}')
+
     gpt_service = GPTService()
-    answer, chat_tk = gpt_service.chat(question_document.content, documents=top_n_documents)
+    prompt_helper = gpt_service.chat(question_document.content, documents=top_n_documents)
+    logger.debug(f'aid:{aid}-请求GPT完成-消耗tk:{prompt_helper.tk}-耗时{t()}\n{prompt_helper.assistant_content}')
 
     return {
         '相关文本': [d.content for d in top_n_documents],
-        '回答': answer,
-        'chat使用token': chat_tk
+        '回答': prompt_helper.assistant_content,
+        'chat使用token': prompt_helper.total_tk
     }
 
 

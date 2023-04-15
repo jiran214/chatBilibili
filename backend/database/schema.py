@@ -13,4 +13,5 @@ from schema import Document
 
 class BiliNoteForMongo(BiliNoteView):
     documents: List[Document]
+    summary_response: dict = None
     create_time: int

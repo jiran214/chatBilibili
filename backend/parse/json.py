@@ -33,3 +33,9 @@ def get_note_detail_subtitle(json_data) -> (str, BiliNote):
         return subtitle[0]['subtitle_url'], note_schema
     else:
         return None, note_schema
+
+
+def get_first_page_comment(json_data):
+    data = json_data['data']
+    res = [reply['content']['message'] for reply in data['replies']]
+    return '\n'.join(res)

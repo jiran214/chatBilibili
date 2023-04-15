@@ -75,6 +75,7 @@ class GPT3dot5PromptHelper(TokenMixin):
     @property
     def messages(self):
         return self._messages
+
     @property
     def user_content(self):
         """最新用户提问"""

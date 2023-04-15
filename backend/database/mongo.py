@@ -165,7 +165,6 @@ class DBManager:
                 return result
 
 
-
 def new_mongo_client(uri, **kwargs):
     """Create new pymongo.mongo_client.MongoClient instance. DO NOT USE IT DIRECTLY."""
     try:

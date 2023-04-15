@@ -113,3 +113,16 @@ class BiliNote(BaseModel):
     Tags: List[BiliNoteTag]
     # 推荐视频信息
     # Related: List[BiliNoteView]
+
+
+class BiliCommentParams(BaseModel):
+    # 评论区类型代码
+    type: int = 1
+    # 目标评论区id
+    oid: int
+    # 排序方式 默认为3 0 3：仅按热度 1：按热度 + 按时间 2：仅按时间
+    mode: int = 1
+    # 评论页选择 按热度时：热度顺序页码（0 为第一页） 按时间时：时间倒序楼层号 默认为 0
+    next: int = 0
+    # 每页项数 默认为 20 定义域：1 - 30
+    ps: int = 20

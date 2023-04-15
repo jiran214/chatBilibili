@@ -5,9 +5,12 @@
  @DateTime: 2023/4/7 16:30
  @SoftWare: PyCharm
 """
+import json
+
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
+
 # from starlette.responses import StreamingResponse
 # from fastapi.responses import StreamingResponse
 import log
@@ -15,7 +18,8 @@ from database.mongo_orm import NoteColl
 from database.schema import BiliNoteForMongo
 from prompt.schema import SummaryConfig
 from schema import Document
-from service import NoteCaptionCrawlService, EmbeddingService, GPTService
+from service import CrawlService, EmbeddingService, GPTService
+
 from utils.timeutil import TimeRecord
 from utils.video_id_transform import note_query_2_aid
 
@@ -27,8 +31,8 @@ logger = log.service_logger
 
 
 @embedding_router.get("/summary", summary='获取视频向量，生成概要', description='', tags=['summary'])
-async def caption(
-        note_query: str
+async def summary(
+        note_query: str, bt: BackgroundTasks
 ):
     # 初始化
     embedding_total_tk = 0
@@ -46,10 +50,14 @@ async def caption(
     mongo_note_schema = coll.find_one(aid=int(aid))
     logger.debug(f'aid:{aid}-向量查询完成-耗时{t()}')
 
+    # 缓存命中
+    if mongo_note_schema and (summary_response := mongo_note_schema.summary_response):
+        return summary_response
+
     embedding_service = EmbeddingService()
     if not mongo_note_schema:
         # 采集视频资源
-        crawl_service = NoteCaptionCrawlService(aid=aid)
+        crawl_service = CrawlService(aid=aid)
         documents, note_schema = await crawl_service.get_note_caption(t)
         logger.debug(f"aid:{aid}-获取字幕资源完成-cc字幕:{bool(note_schema.View.subtitle['list'])}-耗时{t()}")
         # 获取向量
@@ -76,7 +84,7 @@ async def caption(
     logger.debug(f'aid:{aid}-获取参照向量完成-耗时{t()}')
 
     # 计算top n接近的documents
-    top_n_documents = embedding_service.search_top_n_with_vector_from_documents(mean_embedding, documents, top=20)
+    top_n_documents = embedding_service.search_top_n_with_vector_from_documents(mean_embedding, documents, top=30)
     logger.debug(f'aid:{aid}-搜索概要语料完成-耗时{t()}')
 
     # 生成概要
@@ -91,18 +99,22 @@ async def caption(
             language='Chinese'
         ))
     logger.debug(f'aid:{aid}-请求GPT生成概要完成-消耗tk:{prompt_helper.tk}-耗时{t()}\n{prompt_helper.assistant_content}')
+
     # summary = gpt_service.get_summary_2(documents=top_n_documents)
 
-    return {
-        '主要内容': [d.content for d in top_n_documents],
-        '摘要': prompt_helper.assistant_content,
-        '嵌入使用token': embedding_total_tk,
-        '概要使用token': prompt_helper.total_tk
+    res = {
+        'related_content': [d.content for d in top_n_documents],
+        'summary': prompt_helper.assistant_content,
+        'embedding_total_tk': embedding_total_tk,
+        'summary_total_tk': prompt_helper.total_tk
     }
+    # 缓存结果
+    coll.update_response(res)
+    return res
 
 
 @embedding_router.get("/chat", summary='和视频内容聊天', description='', tags=['chat'])
-async def caption(
+async def chat(
         note_query: str,
         question: str
 ):
@@ -140,6 +152,42 @@ async def caption(
         'chat使用token': prompt_helper.total_tk
     }
 
+
+@embedding_router.get("/comment", summary='自动生成评论', description='', tags=['comment'])
+async def comment(
+        note_query: str,
+):
+    # aid转换 todo 转为依赖
+    aid = note_query_2_aid(note_query)
+    if not aid:
+        raise HTTPException(status_code=500, detail="未找到相关资源")
+
+    tr = TimeRecord(aid)
+    t = tr.mark
+
+    # 获取评论
+    crawl_service = CrawlService(aid)
+    comments = await crawl_service.get_note_comment(limit=5)
+    logger.debug(f'aid:{aid}-获取评论完成-耗时{t()}')
+
+    # 获取summary
+    coll = NoteColl()
+    mongo_note_schema = coll.find_one(aid=int(aid))
+    if mongo_note_schema.summary_response is None:
+        raise HTTPException(status_code=500, detail="请先获取摘要")
+
+    summary = mongo_note_schema.summary_response['summary']
+    logger.debug(f'aid:{aid}-获取summary完成-耗时{t()}')
+
+    # 组成prompt，请求got
+    gpt_service = GPTService()
+    prompt_helper = gpt_service.get_comment(summary, comment)
+    logger.debug(f'aid:{aid}-GPT请求完成-消耗tk:{prompt_helper.tk}-耗时{t()}')
+
+    return {
+        '生成的评论': prompt_helper.assistant_content,
+        'chat使用token': prompt_helper.total_tk
+    }
 
 # todo 响应事件流
 # condition = threading.Condition()

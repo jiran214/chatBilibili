@@ -6,6 +6,7 @@
  @SoftWare: PyCharm
 """
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from typing import List, Union
 
@@ -15,12 +16,12 @@ import numpy as np
 from log import service_logger
 from parse.audio2text import get_audio_text
 from parse.content import async_parse_content_to_file
-from parse.json import get_note_detail_subtitle, get_note_cc_content
+from parse.json import get_note_detail_subtitle, get_note_cc_content, get_first_page_comment
 from prompt.prompt_helpers import GPT3dot5PromptHelper, temple
 from prompt.schema import SummaryConfig
-from requestor.bilibili import request_note_detail, request_note_audio, request_note_cc
+from requestor.bilibili import request_note_detail, request_note_audio, request_note_cc, request_note_comment
 from requestor.opanAi import chat_with_3dot5, async_get_embedding, async_get_embedding_with_documents, get_embedding
-from requestor.schemas import BiliNote, BiliAudioDownloadHrefParams, BiliNoteView
+from requestor.schemas import BiliNote, BiliAudioDownloadHrefParams, BiliNoteView, BiliCommentParams
 from schema import Document, Vector
 from utils.embedding import num_tokens_and_cost_from_string, distances_from_embeddings
 from utils.session import _make_session
@@ -149,8 +150,18 @@ class GPTService:
         chat_with_3dot5(self.prompt_helper)
         return self.prompt_helper
 
+    def get_comment(self, summary, comments):
+        self.prompt_helper.initialize_message_system_content(temple.get_bili_comment_system_content())
+        self.prompt_helper.add_message_user_content(
+            temple.get_bili_comment_user_content(
+                summary, comments
+        ))
+        chat_with_3dot5(self.prompt_helper)
+        # self.prompt_helper.assistant_content = json.loads(self.prompt_helper.assistant_content)
+        return self.prompt_helper
 
-class NoteCaptionCrawlService:
+
+class CrawlService:
     def __init__(self, aid, bv=None):
         self.aid = aid
 
@@ -185,6 +196,13 @@ class NoteCaptionCrawlService:
         ])
 
         return documents, note_schema
+
+    async def get_note_comment(self, limit) -> List[str]:
+        ctx = _make_session()
+        session = await ctx.__aenter__()
+        json_data = await request_note_comment(session, BiliCommentParams(oid=self.aid))
+        comment_list = get_first_page_comment(json_data)
+        return comment_list[:limit]
 
 # class VectorStorageService:
 #     def __init__(self, storage):

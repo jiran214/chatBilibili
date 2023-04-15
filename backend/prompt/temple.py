@@ -117,6 +117,38 @@ def get_bili_chat_user_content(question, documents: List[Document]):
     return temple + text
 
 
+embedding_comment_temple = {
+    'system': (
+        "你是一个社交媒体用户，请发挥自己的创意，在B站评论视频"
+        "评论正负面评价都要有，比如这个视频做的太烂了"
+        "输出为一个json格式python列表，列表元素为'评论文本[Emoji]'，不要包含不相关的内容"
+    ),
+    'user': (
+        # "{extra_prompt}"
+        "请输出{reply_num}条评论\n"
+        "参考视频摘要的内容和热评的语言风格（对热评不能过度参考，要发挥创意）"
+        "md格式的视频摘要：\n"
+        "{summary}\n"
+        "热评:\n"
+        "{comments}"
+    )
+}
+
+
+def get_bili_comment_system_content():
+    return embedding_chat_temple['system']
+
+
+def get_bili_comment_user_content(summary, comments, extra_prompt=None, reply_num=5):
+    temple = embedding_comment_temple['user'].format(
+        summary=summary,
+        comments=comments,
+        reply_num=reply_num,
+        # extra_prompt
+    )
+    return temple
+
+
 if __name__ == '__main__':
     # print(get_bili_summary_user_content(title='123', transcript='123'))
     print(get_bili_summary_system())

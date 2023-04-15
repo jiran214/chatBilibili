@@ -11,7 +11,7 @@ from utils.path import get_absolute_file_path
 config_filename = 'config.ini'
 
 file_path = get_absolute_file_path(config_filename)
-_config = configparser.ConfigParser()
+_config = configparser.RawConfigParser()
 _config.read(file_path)
 
 service_settings = dict(_config.items('service'))

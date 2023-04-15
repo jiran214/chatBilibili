@@ -164,7 +164,7 @@ question：聊天的问题
 
 ## 更新日志
 
-暂无
+- 4.15 新增自动生成视频评论：comment接口
 
 ## Contact Me
 

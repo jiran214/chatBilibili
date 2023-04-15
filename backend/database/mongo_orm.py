@@ -36,3 +36,13 @@ class NoteColl:
         except Exception as e:
             raise e
         return self._query.copy()
+
+    def update_response(self, summary):
+        if not self._query.summary_response:
+            self._coll.update_one(
+                filter={'aid': self._query.aid},
+                update={'$set': {'summary_response': summary}}
+            )
+            return summary
+        return None
+

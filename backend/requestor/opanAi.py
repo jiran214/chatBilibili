@@ -146,11 +146,42 @@ def chat_with_3dot5(prompt_helper: GPT3dot5PromptHelper):
     # return prompt_helper
 
 
+def chat(question):
+    response = openai.ChatCompletion.create(**GPT35Params(
+        model='gpt-3.5-turbo',
+        # messages=prompt_helper.messages,
+        messages=[{'role': 'user', 'content': question}],
+        temperature=1,
+        # max_tokens
+    ).dict(exclude_defaults=False, exclude_none=True))
+    return response['choices'][0]['message']
+
+
 async def aio_test():
     # await asyncio.gather(
     #     *[async_get_embedding('你好世界') for _ in range(50)]
     # )
-    [simple_get_embedding('你好世界') for _ in range(50)]
+    # [simple_get_embedding('你好世界') for _ in range(50)]
+    chat("""解释一下配置：server {
+		# nginx监听的端口
+		listen 8000; 
+		server_name  127.0.0.1; 
+		location / {
+			# 反向代理端口
+			proxy_pass http://127.0.0.1:8003; 
+			proxy_set_header Host $host;
+			proxy_redirect off;
+			proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    	}
+        location /static/ {
+        	alias /project/static/; #静态资源路径
+        }
+    	location /media/ {
+            alias /project/upload/; #上传文件路径
+    	}
+    }
+}""")
+
 
 
 if __name__ == '__main__':

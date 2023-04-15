@@ -12,7 +12,7 @@ import aiohttp
 
 import config
 from parse.content import async_parse_content_to_file
-from requestor.schemas import BiliAudioDownloadHrefParams, BiliNote
+from requestor.schemas import BiliAudioDownloadHrefParams, BiliNote, BiliCommentParams
 from log import crawler_logger
 from utils.path import get_absolute_file_path
 from utils.video_id_transform import bv2aid
@@ -88,6 +88,20 @@ async def request_note_detail(session, aid: int = None, bvid: str = None) -> Bil
         json_data = await resp.json()
         return json_data
 
+
+async def request_note_comment(session, params: BiliCommentParams):
+    """
+    获取笔记最近热门评论20条
+    :param session:
+    :param params:
+    :return: BiliNote
+    """
+    url = "https://api.bilibili.com/x/v2/reply/main"
+
+    async with session.get(url=url, params=params.dict()) as resp:
+        logger.info(f'请求状态:{resp.status}-{params}')
+        json_data = await resp.json()
+        return json_data
 
 # async def get_kol_note_list(session, params: BiliKolNoteListParams) -> (int, List[int]):
 #     url = "https://api.bilibili.com/x/space/wbi/arc/search"

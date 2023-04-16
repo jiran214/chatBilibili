@@ -5,6 +5,7 @@
  @DateTime: 2023/4/2 0:03
  @SoftWare: PyCharm
 """
+from fastapi import HTTPException
 
 Str = 'fZodR9XQDSUm21yCkr6zBqiveYah8bt4xsWpHnJE7jL5VG3guMTKNPAwcF'  # 准备的一串指定字符串
 Dict = {}  # 建立一个空字典
@@ -53,6 +54,10 @@ def note_query_2_aid(note_query: str):
         aid = bv2aid(note_query)
     else:
         aid = note_query
+
+    if not aid:
+        raise HTTPException(status_code=500, detail="未找到相关资源")
+
     return aid
 
 

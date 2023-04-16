@@ -9,6 +9,7 @@ import asyncio
 import os
 
 import aiohttp
+from parsel import Selector
 
 import config
 from parse.content import async_parse_content_to_file
@@ -102,6 +103,22 @@ async def request_note_comment(session, params: BiliCommentParams):
         logger.info(f'请求状态:{resp.status}-{params}')
         json_data = await resp.json()
         return json_data
+
+
+async def request_note_danmu(session, cid):
+    """
+    获取笔记实时弹幕和弹幕趋势（高能时刻）
+    :param cid: content id
+    :return: BiliNote
+    """
+    # 构造aiohttp参数
+    url = "https://api.bilibili.com/x/v1/dm/list.so"
+
+    # 请求xml弹幕内容
+    async with session.get(url=url, params={'oid': cid}) as resp:
+        logger.info(f'请求状态:{resp.status}-params')
+        text_data = await resp.text()
+        return text_data
 
 # async def get_kol_note_list(session, params: BiliKolNoteListParams) -> (int, List[int]):
 #     url = "https://api.bilibili.com/x/space/wbi/arc/search"

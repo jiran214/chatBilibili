@@ -7,7 +7,7 @@
 """
 import tiktoken
 
-from prompt import temple
+from prompt import temple_factory
 
 
 class TokenMixin:

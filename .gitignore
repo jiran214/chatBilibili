@@ -14,7 +14,7 @@ __pycache__/
 *.rej.*
 *.tmp.*
 
-.mp3
+*.mp3
 
 env/
 config.ini

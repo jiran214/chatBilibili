@@ -17,9 +17,11 @@ from log import service_logger
 from parse.audio2text import get_audio_text
 from parse.content import async_parse_content_to_file
 from parse.json import get_note_detail_subtitle, get_note_cc_content, get_first_page_comment
-from prompt.prompt_helpers import GPT3dot5PromptHelper, temple
+from parse.text import get_real_time_content
+from prompt.prompt_helpers import GPT3dot5PromptHelper
 from prompt.schema import SummaryConfig
-from requestor.bilibili import request_note_detail, request_note_audio, request_note_cc, request_note_comment
+from prompt.temple_factory import SummaryPromptFactory, ChatPromptFactory, CommentPromptFactory
+from requestor.bilibili import request_note_detail, request_note_audio, request_note_cc, request_note_comment, request_note_danmu
 from requestor.opanAi import chat_with_3dot5, async_get_embedding, async_get_embedding_with_documents, get_embedding
 from requestor.schemas import BiliNote, BiliAudioDownloadHrefParams, BiliNoteView, BiliCommentParams
 from schema import Document, Vector
@@ -128,14 +130,16 @@ class GPTService:
         self.prompt_helper = GPT3dot5PromptHelper()
 
     def get_summary_2(self, documents: List[Document]):
-        self.prompt_helper.initialize_message_system_content(temple.get_bili_summary_system_2(documents))
+        prompt_factory = SummaryPromptFactory()
+        self.prompt_helper.initialize_message_system_content(prompt_factory.get_system_content_2(documents))
         chat_with_3dot5(self.prompt_helper)
         return self.prompt_helper
 
     def get_summary_1(self, note_schema: BiliNoteView, documents: List[Document], config: SummaryConfig):
-        self.prompt_helper.initialize_message_system_content(temple.get_bili_summary_system())
+        prompt_factory = SummaryPromptFactory()
+        self.prompt_helper.initialize_message_system_content(prompt_factory.get_system_content())
         self.prompt_helper.add_message_user_content(
-            temple.get_bili_summary_user_content(
+            prompt_factory.get_user_content(
                 title=note_schema.title,
                 documents=documents,
                 config=config,
@@ -145,25 +149,31 @@ class GPTService:
         return self.prompt_helper
 
     def chat(self, question, documents: List[Document]):
-        self.prompt_helper.initialize_message_system_content(temple.get_bili_chat_system_content())
-        self.prompt_helper.add_message_user_content(temple.get_bili_chat_user_content(question, documents))
+        prompt_factory = ChatPromptFactory()
+        self.prompt_helper.initialize_message_system_content(prompt_factory.get_system_content())
+        self.prompt_helper.add_message_user_content(prompt_factory.get_user_content(question, documents))
         chat_with_3dot5(self.prompt_helper)
         return self.prompt_helper
 
     def get_comment(self, summary, comments):
-        self.prompt_helper.initialize_message_system_content(temple.get_bili_comment_system_content())
+        prompt_factory = CommentPromptFactory()
+        self.prompt_helper.initialize_message_system_content(prompt_factory.get_system_content())
         self.prompt_helper.add_message_user_content(
-            temple.get_bili_comment_user_content(
+            prompt_factory.get_user_content(
                 summary, comments
         ))
         chat_with_3dot5(self.prompt_helper)
         # self.prompt_helper.assistant_content = json.loads(self.prompt_helper.assistant_content)
         return self.prompt_helper
 
+    def get_danmu(self, danmus):
+        ...
+
 
 class CrawlService:
-    def __init__(self, aid, bv=None):
+    def __init__(self, aid, bv=None, cid=None):
         self.aid = aid
+        self.cid = cid
 
     async def get_note_caption(self, t) -> (Union[List[Document], None], BiliNote):
         """获取cc字幕，没有返回None"""
@@ -203,6 +213,13 @@ class CrawlService:
         json_data = await request_note_comment(session, BiliCommentParams(oid=self.aid))
         comment_list = get_first_page_comment(json_data)
         return comment_list[:limit]
+
+    async def get_note_danmu(self):
+        ctx = _make_session()
+        session = await ctx.__aenter__()
+        text_data = await request_note_danmu(session, self.cid)
+        real_time_content_list = get_real_time_content(text_data)
+        return real_time_content_list
 
 # class VectorStorageService:
 #     def __init__(self, storage):

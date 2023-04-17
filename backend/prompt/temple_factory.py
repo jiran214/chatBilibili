@@ -76,7 +76,7 @@ class ChatPromptFactory(PromptFactory):
 
 class CommentPromptFactory(PromptFactory):
 
-    temple = embedding_chat_temple
+    temple = embedding_comment_temple
 
     def get_system_content(self):
         return self.temple['system']

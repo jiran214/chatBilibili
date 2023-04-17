@@ -31,10 +31,10 @@ embedding_router = APIRouter(
 logger = log.service_logger
 
 
-@embedding_router.get("/note", summary='获取视频数据', description='', tags=['爬虫'])
+# @embedding_router.get("/note_detail", summary='获取视频数据', description='', tags=['爬虫'])
 async def find_note_schema_by_note_query(
         note_query: str
-) -> BiliNoteForMongo:
+):
     # aid转换
     aid = note_query_2_aid(note_query)
 
@@ -60,7 +60,7 @@ async def find_note_schema_by_note_query(
                 documents=documents,
                 create_time=time.time()
             )
-        coll.save_one( mongo_note_schema)
+        coll.save_one(mongo_note_schema)
         logger.debug(f'aid:{aid}-向量存储完成-耗时{t()}')
     return mongo_note_schema
 
@@ -84,10 +84,7 @@ async def summary(
         return summary_response
 
     embedding_service = EmbeddingService()
-    # 查询向量
     documents = mongo_note_schema.documents
-    logger.debug(f'aid:{aid}-资源已有 向量加载完成-耗时{t()}')
-
     # 获取参照向量
     mean_embedding = embedding_service.get_reference_vector(documents)
     logger.debug(f'aid:{aid}-获取参照向量完成-耗时{t()}')
@@ -119,7 +116,7 @@ async def summary(
         'summary_total_tk': prompt_helper.total_tk
     }
     # 缓存结果
-    bt.add_task(NoteColl().update_response, res)
+    bt.add_task(NoteColl().update_response, int(aid), res)
     return res
 
 
@@ -168,21 +165,24 @@ async def comment(
     tr = TimeRecord(aid)
     t = tr.mark
 
+    if not mongo_note_schema.summary_response:
+        raise HTTPException(status_code=500, detail="请先请求summary接口")
+
     # 获取评论
     crawl_service = CrawlService(aid)
     comments = await crawl_service.get_note_comment(limit=5)
     logger.debug(f'aid:{aid}-获取评论完成-耗时{t()}')
 
-    summary = mongo_note_schema.summary_response['summary']
+    note_summary = mongo_note_schema.summary_response['summary']
     logger.debug(f'aid:{aid}-获取summary完成-耗时{t()}')
 
     # 组成prompt，请求got
     gpt_service = GPTService()
-    prompt_helper = gpt_service.get_comment(summary, comment)
+    prompt_helper = gpt_service.get_comment(note_summary, comments)
     logger.debug(f'aid:{aid}-GPT请求完成-消耗tk:{prompt_helper.tk}-耗时{t()}')
 
     return {
-        '生成的评论': prompt_helper.assistant_content,
+        '生成的评论': prompt_helper.assistant_content.split('\n'),
         'chat使用token': prompt_helper.total_tk
     }
 

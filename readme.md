@@ -18,6 +18,8 @@ git clone https://github.com/jiran214/chatBilibili.git
 cd backend
 pip install -r .\requirements.txt
 python ./main
+
+访问 host:port/docs 接口调试文档
 ```
 
 在backend目录下创建配置文件config.int模板(该项目所有配置信息都在这)
